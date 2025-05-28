@@ -1,1 +1,4 @@
 Flask
+youtube_transcript_api
+langchain_core
+langchain_community
