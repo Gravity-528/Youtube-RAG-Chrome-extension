@@ -8,5 +8,17 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         if (videoId) {
             console.log("Extracted videoid", videoId);
         }
+        
+        chrome.tabs.sendMessage(tabId, { 
+            action: "videoId", 
+            videoId: videoId 
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("Error sending message:", chrome.runtime.lastError);
+            } else {
+                console.log("Response from content script:", response);
+            }
+        });
+
     }
 });
