@@ -20,5 +20,8 @@
   "icons": {
     "48": "1144760.png",
     "128": "1144760.png"
-  }
+  },
+  "host_permissions": [
+    "<all_urls>"
+  ]
 }
