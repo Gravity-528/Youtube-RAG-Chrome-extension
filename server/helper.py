@@ -1,11 +1,13 @@
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 from langchain_community.vectorstores import FAISS
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.memory import ConversationBufferMemory
 
 import spacy
 
@@ -67,13 +69,11 @@ def chunk_by_multilingual_sentences_with_timestamps(transcript_list, chunk_size=
                 page_content=buffer.strip(),
                 metadata={"start_time": start_time}
             ))
-            
             overlap_start = max(0, i - 3)
             buffer = " ".join(sentence_spans[j].text.strip() for j in range(overlap_start, i))
             buffer_len = len(buffer)
             start_time = find_start_time(sentence_spans[overlap_start].start_char)
 
-    
     if buffer.strip():
         chunks.append(Document(
             page_content=buffer.strip(),
@@ -105,29 +105,35 @@ def format_docs(retrieved_docs):
 def build_qa_chain(vector_store):
     retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 
-    prompt_template = """You are a helpful assistant. Use the following context from a YouTube video transcript to answer the user's question. Mention relevant timestamps if helpful.
-    {context}
-    Question: {question}
-    Answer:"""
-    
-    prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-    
-    parallel_chain = RunnableParallel({
-        'context': retriever | RunnableLambda(format_docs),
-        'question': RunnablePassthrough()
-    })
+    memory = ConversationBufferMemory(return_messages=True, memory_key="chat_history")
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful assistant for YouTube-based queries."),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{input}")
+    ])
 
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-    parser = StrOutputParser()
 
-    main_chain = parallel_chain | prompt | llm | parser
-    return main_chain
+    chain = prompt | llm
+    return chain, memory, retriever
 
-def ask_question(video_id, query):
+def ask_question(video_id, query, chat_history=[]):
     vector_store = ingestion_knowledge_base(video_id)
     if not vector_store:
         return "No transcript available for this video."
 
-    chain = build_qa_chain(vector_store)
-    answer = chain.invoke(query)
+    chain, memory, retriever = build_qa_chain(vector_store)
+
+    for msg in chat_history:
+        memory.chat_memory.add_user_message(msg["user"])
+        memory.chat_memory.add_ai_message(msg["assistant"])
+
+    docs = retriever.get_relevant_documents(query)
+    formatted_context = format_docs(docs)
+
+    answer = chain.invoke({
+        "input": query,
+        "chat_history": memory.chat_memory.messages
+    })
     return answer
