@@ -1,28 +1,40 @@
+
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = {
-  mode: 'development',
   entry: {
-    popup: './src/popup.js',
-    background: './src/background.js',
-    content: './src/content.js'
+    popup: './src/popup/index.tsx',
+    background: './src/background.ts',
+    content: './src/content.ts'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: '[name].js'
+    filename: '[name].js',
+    clean: true
+  },
+  resolve: {
+    extensions: ['.tsx', '.ts', '.js']
+  },
+  module: {
+    rules: [
+      {
+        test: /\.tsx?$/,
+        use: 'ts-loader',
+        exclude: /node_modules/
+      },
+      {
+        test: /\.css$/i,
+        use: ['style-loader', 'css-loader', 'postcss-loader']
+      }
+    ]
   },
   plugins: [
     new HtmlWebpackPlugin({
-      template: './src/popup.html',
+      template: 'public/popup.html',
       filename: 'popup.html',
       chunks: ['popup']
-    }),
-    new CopyWebpackPlugin({
-      patterns: [
-        { from: 'public', to: '.' }
-      ]
     })
-  ]
+  ],
+  mode: 'development'
 };
