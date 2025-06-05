@@ -1,4 +1,6 @@
 
+/// <reference types="chrome"/>
+
 async function sendRequest(){
     try{
         const response =await fetch("http://127.0.0.1:5000",{
@@ -37,5 +39,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             }
         });
 
+    } else if (changeInfo.status === "complete" && tab.url) {
+        chrome.tabs.sendMessage(tabId, {
+            action: "others",
+            url: tab.url
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("Error sending message:", chrome.runtime.lastError);
+            } else {
+                console.log("Response", response);
+            }
+        });
     }
 });

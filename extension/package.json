@@ -11,6 +11,7 @@
   "type": "commonjs",
   "devDependencies": {
     "@radix-ui/react-slot": "^1.2.3",
+    "@types/chrome": "^0.0.326",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
     "autoprefixer": "^10.4.21",

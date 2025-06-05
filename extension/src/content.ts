@@ -6,6 +6,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // console.log("Sender tab ID:", sender.tab ? sender.tab.id : "No tab info");
         
         sendResponse({ status: "success", videoId: request.videoId });
+    }else if(request.action === "others"){
+        sendResponse({ status: "success", url: request.url });
     } else {
         sendResponse({ status: "error", message: "Unknown action" });
     }
