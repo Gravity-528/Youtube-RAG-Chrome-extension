@@ -1,6 +1,8 @@
 
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const CopyPlugin = require("copy-webpack-plugin");
+// const path = require("path");
 
 module.exports = {
   entry: {
@@ -14,7 +16,10 @@ module.exports = {
     clean: true
   },
   resolve: {
-    extensions: ['.tsx', '.ts', '.js']
+    extensions: ['.tsx', '.ts', '.js'],
+    alias: {
+      "@": path.resolve(__dirname, "src") 
+    }
   },
   module: {
     rules: [
@@ -34,6 +39,11 @@ module.exports = {
       template: 'public/popup.html',
       filename: 'popup.html',
       chunks: ['popup']
+    }),
+    new CopyPlugin({
+      patterns: [
+        { from: "manifest.json", to: "manifest.json" } 
+      ]
     })
   ],
   mode: 'development'

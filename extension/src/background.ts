@@ -1,22 +1,22 @@
 
 /// <reference types="chrome"/>
 
-async function sendRequest(){
-    try{
-        const response =await fetch("http://127.0.0.1:5000",{
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ message: "Hello from Chrome Extension!" })
-        })
+// async function sendRequest(){
+//     try{
+//         const response =await fetch("http://127.0.0.1:5000",{
+//             method: "POST",
+//             headers: {
+//                 "Content-Type": "application/json"
+//             },
+//             body: JSON.stringify({ message: "Hello from Chrome Extension!" })
+//         })
 
-        const data = await response.json();
-        console.log("server:", data);
-    }catch(e){
-        console.error("Error in sendRequest:", e);
-    }
-}
+//         const data = await response.json();
+//         console.log("server:", data);
+//     }catch(e){
+//         console.error("Error in sendRequest:", e);
+//     }
+// }
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === "complete" && tab.url && tab.url.includes("youtube.com/watch")) {
         console.log("Back scr", tab.url);
