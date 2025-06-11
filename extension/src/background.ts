@@ -1,22 +1,3 @@
-
-/// <reference types="chrome"/>
-
-// async function sendRequest(){
-//     try{
-//         const response =await fetch("http://127.0.0.1:5000",{
-//             method: "POST",
-//             headers: {
-//                 "Content-Type": "application/json"
-//             },
-//             body: JSON.stringify({ message: "Hello from Chrome Extension!" })
-//         })
-
-//         const data = await response.json();
-//         console.log("server:", data);
-//     }catch(e){
-//         console.error("Error in sendRequest:", e);
-//     }
-// }
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === "complete" && tab.url && tab.url.includes("youtube.com/watch")) {
         console.log("Back scr", tab.url);
@@ -50,5 +31,22 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 console.log("Response", response);
             }
         });
+    }
+});
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "openPopupWithText") {
+        console.log("Received openPopupWithText request:", request.text);
+        sendResponse({ status: "success", text: request.text });
+    }else if(request.action==="StoreQuery"){
+        console.log("Received StoreQuery request:", request.query);
+        chrome.storage.local.set({ selectedText: request.query }, () => {
+            if (chrome.runtime.lastError) {
+                console.error("Storage error:", chrome.runtime.lastError);
+            } else {
+                console.log("Query saved successfully!");
+            }
+        });
+        sendResponse({ status: "success" });
     }
 });

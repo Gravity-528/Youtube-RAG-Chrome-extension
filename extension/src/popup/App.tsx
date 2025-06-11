@@ -1,12 +1,23 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import React, { useState } from "react";
+import React, { useState ,useEffect} from "react";
 
 const App = () => {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<
     { type: "user" | "bot"; content: string }[]
   >([]);
+
+  useEffect(() => {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg.action === "openPopupWithText") {
+        chrome.storage.local.get("selectedText", (data) => {
+          setInput(data.selectedText);
+          // handleAsk(); // if needed
+        });
+      }
+    });
+  }, []);
 
   const handleAsk = () => {
     if (!input.trim()) return;
