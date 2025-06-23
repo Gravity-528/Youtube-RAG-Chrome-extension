@@ -1,22 +1,37 @@
-from flask import Flask, request, jsonify
-from helper import ask_question
+from fastapi import FastAPI,Query
+from .ingestion import graph_builder
+app=FastAPI()
 
-app = Flask(__name__)
+@app.get('/')
+def func():
+    print("hello how are you")
 
-@app.route('/query_video', methods=['POST'])
-def query_video():
-    data = request.json
-    video_id = data.get('videoId')
-    query = data.get('query')
 
-    if not video_id or not query:
-        return jsonify({'error': 'videoId and query are required'}), 400
+@app.post('/chat')
+def chat(
+    query:str= Query(...,description="chat message")
+):
+    pass
 
-    try:
-        answer = ask_question(video_id, query)
-        return jsonify({'answer': answer})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.post("/ingest")
+def ingest_documents(
+    url:str = Query(..., description="URL to ingest documents from"),
+    type: str = Query(..., description="Type of ingestion (e.g., 'doc'or 'transcript', etc.)"),
+    video_id: str = Query(None, description="Video ID for transcript ingestion")
+):
+    
+    _state = {
+        "url": url,
+        "type": type,
+        "video_id": video_id,
+        "list_to_scrap": []
+    }
+    graph_builder(_state)
+    return {"message": "Documents ingested successfully"}
 
-if __name__ == '__main__':
-    app.run(debug=True)
+@app.get("/query_rag_answer")
+def query_rag_answer(
+    query: str = Query(..., description="Query to ask the RAG model")
+):
+    # Placeholder for the actual query logic
+    return {"message": "Query received successfully", "query": query}
