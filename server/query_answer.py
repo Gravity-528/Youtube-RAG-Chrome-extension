@@ -17,6 +17,7 @@ class QueryState(TypedDict):
     retrieved_docs: Union[list[Document], None]
     recent_convo: Union[list[dict], None]
     semantic_memory: Union[list[Document], None]
+    try_count: int
 
 
 def query_enhancer(state: QueryState, llm) -> QueryState:
@@ -171,3 +172,46 @@ def get_answer(state: QueryState, llm=None) -> QueryState:
 
     state["context"] = output
     return state
+
+def evaluate_answer(state: QueryState, llm=None) -> QueryState:
+    if not state.get("context"):
+        state["context"] = "No answer generated."
+        return state
+
+    prompt=PromptTemplate(
+        input_variables=["query","response"],
+        template="""
+        You are an impartial evaluator. Your job is to rate how relevant and helpful a given response is in addressing a user query. 
+        
+        Instructions:
+        1. Carefully compare the response to the original query.
+        2. Consider factual alignment, topical relevance, and how well the response satisfies the query intent.
+        3. Provide a short, specific explanation of your evaluation.
+        4. Then, assign a score from 1 to 10 based on the rubric below.
+        
+        ### Query:
+        {query}
+        
+        ### Response:
+        {response}
+        
+        ### Scoring Rubric:
+        Score 1-3: Poor — The response is mostly irrelevant, off-topic, or incorrect.
+        Score 4-6: Fair — Somewhat relevant, partially addresses the query, but lacks clarity or depth.
+        Score 7-8: Good — Mostly relevant and correct, but could be more complete or focused.
+        Score 9-10: Excellent — Fully relevant, accurate, and addresses the query thoroughly.
+        
+        Format:
+        Feedback: <your brief analysis>  
+        [RESULT] <integer from 1 to 10>
+        """
+        )
+
+    chain = LLMChain(llm=llm, prompt=prompt)
+    output = chain.run(query=state["query"], response=state["context"])
+
+    state["evaluation"] = output
+    return state
+
+# def query_upgradation(state:QueryState) -> QueryState:
+    
