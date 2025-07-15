@@ -25,7 +25,7 @@ function handleMouseUp(event: MouseEvent) {
   const selection = window.getSelection();
   const selectedText = selection?.toString().trim() || "";
 
-  if (selectedText.length > 0) {
+  if (selectedText.length > 0 && selectedText.length <= 400) {
     const range = selection!.getRangeAt(0).getBoundingClientRect();
     const x = range.left + window.scrollX;
     const y = range.bottom + window.scrollY + 10;

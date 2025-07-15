@@ -7,173 +7,279 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.chains import LLMChain 
 from collections import defaultdict, Counter
 from langchain.vectorstores.qdrant import Qdrant
+from langchain.tools.ddg_search.tool import DuckDuckGoSearchRun
+from memory.main import base_config
+import copy
+from mem0 import Memory
+from langchain_openai import ChatOpenAI
+from typing import TypedDict, Union, List, Any,Literal
+import os
+from langchain_core.runnables import RunnableConfig
+from langfuse.langchain import CallbackHandler
+from langfuse import observe
+from qdrant_client import models
+# from langchain.output_parsers import StrOutputParser
+from langchain_core.output_parsers.string import StrOutputParser
+from openai import OpenAI
+from langchain.load import dumps,loads
+import json
 
-from typing import TypedDict, Union
 
+client= OpenAI()
+
+os.environ["LANGFUSE_PUBLIC_KEY"] = "pk-lf-9c926bfc-d2f9-4af7-8cf9-63e000e62143" 
+os.environ["LANGFUSE_SECRET_KEY"] = "sk-lf-cb7fc817-99a2-4857-a2ea-280070bfdf7e" 
+os.environ["LANGFUSE_HOST"] = "https://cloud.langfuse.com"
+
+llm = ChatOpenAI(
+    model="gpt-3.5-turbo",
+    temperature=0.0,             
+)
+
+langfuse_handler = CallbackHandler()
+def get_config_for_user(email: str):
+    collection_name = email.replace("@", "_at_").replace(".", "_dot_")
+
+    config = copy.deepcopy(base_config)
+
+    config["vector_store"]["config"]["collection_name"] = collection_name
+
+    return config
+
+web_search_tool = DuckDuckGoSearchRun()
 class QueryState(TypedDict):
     query: str
     context: str
-    enhanced_query: Union[str, None]
-    retrieved_docs: Union[list[Document], None]
-    recent_convo: Union[list[dict], None]
-    semantic_memory: Union[list[Document], None]
+    enhanced_query: Union[List[str], None]
+    retrieved_docs: Union[List[Document], None]
+    recent_convo: Union[List[dict], None]
+    semantic_memory: Union[List[Document], None]
     try_count: int
+    evaluation: int
+    webSearch: Union[str, None]
+    vectorstore: Qdrant
+    error: Union[str, None]  
 
 
-def query_enhancer(state: QueryState, llm) -> QueryState:
+def query_enhancer(state: QueryState) -> QueryState:
+    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>----ENHANCER")
     prompt = PromptTemplate(
     input_variables=["query"],
-    template="""You are an intelligent and neutral query enhancer. 
-    Given a user query, generate 3-5 semantically and conceptually related queries that stay on topic and either rephrase, extend, or add useful angles. 
-    These queries will be used to search a large knowledge base. Be concise and focused. Avoid repeating the same sentence structure.
-    Respond in valid JSON list format like: ["...", "...", "..."].
-    
-    Example:
-    query: Why is my JWT token expiring too early?
-    Output:
-    [
-        "What controls the expiration time of a JWT token?",
-        "Can clock drift cause early JWT expiration?",
-        "How do I set the correct exp field in JWT tokens?",
-        "Why does my JWT token become invalid before expiry?",
-        "How to implement long-lived sessions using refresh tokens?"
-    ]
-    
-    Example:
-    query: Attention mechanism in transformers
-    Output:
-    [
-        "What is the role of attention in transformer models?",
-        "How does scaled dot-product attention work?",
-        "What are key, query, and value vectors in transformers?",
-        "How is multi-head attention different from single-head?",
-        "How does attention enable context handling in NLP tasks?"
-    ]
-    
-    Example:
-    query: How to handle failed payments in Stripe?
-    Output:
-    [
-        "How do I detect a failed payment in Stripe Checkout?",
-        "What webhook events indicate a failed Stripe transaction?",
-        "How to notify users of failed payments in Stripe billing?",
-        "What are common reasons for payment failure in Stripe?",
-        "How to retry failed payments automatically using Stripe?"
-    ]
-    
-    Example:
-    query: Add Google login to Next.js
-    Output:
-    [
-        "How to implement Google OAuth2 login in a Next.js app?",
-        "How to use NextAuth.js for Google authentication in Next.js?",
-        "What are the environment variables needed for Google login in Next.js?",
-        "How to handle callbacks and redirect URIs in Google OAuth with Next.js?",
-        "How to secure API routes in Next.js after Google login?"
-    ]
-    
-    Example:
-    query: "Docker is an open-source containerization platform by which you can pack your application and all its dependencies into a standardized unit called a container." Explain its meaning
-    Output:
-    [
-        "What does it mean that Docker is an open-source platform?",
-        "What is containerization in the context of software development?",
-        "What does Docker 'pack' into a container — what exactly gets bundled?",
-        "What is a Docker container, and how is it a standardized unit?",
-        "Why is using containers like Docker beneficial for running applications?"
-    ]
-    
-    Query: {query}
+    template="""You are an AI language model assistant. Your task is to generate five 
+    different versions of the given user question to retrieve relevant documents from a vector 
+    database. By generating multiple perspectives on the user question, your goal is to help
+    the user overcome some of the limitations of the distance-based similarity search. 
+    **Provide these alternative questions in a Json array**. Original query: {query}
     Output:
     """
-   )
+    )
 
     chain = LLMChain(llm=llm, prompt=prompt)
     output = chain.run(query=state["query"])
     state["enhanced_query"] = output
     return state
 
+
+from collections import defaultdict
+from langchain.schema import Document
+
+from collections import defaultdict
+import hashlib
+
+def reciprocal_rank_fusion(results: list[list], k=60):
+    scores = defaultdict(float)
+    doc_map = {}
+
+    for docs in results:
+        for rank, doc in enumerate(docs, start=1):
+            source = doc.metadata.get("source", "").strip()
+            title = doc.metadata.get("title", "").strip()
+            desc = doc.metadata.get("description", "").strip()
+            combined = f"{source} | {title} | {desc}".strip(" | ")
+            # Optionally hash to a fixed-length key
+            key = hashlib.sha256(combined.encode("utf-8")).hexdigest()
+            # if not key:
+            #     # as fallback, use hash of content + metadata
+            #     key = hash((doc.page_content, str(doc.metadata)))
+            scores[key] += 1 / (rank + k)
+            doc_map[key] = doc
+
+    # Return sorted list of Document objects with scores
+    fused = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [(doc_map[key], score) for key, score in fused]
+
+@observe(name="multiquery_search_and_reranking")
 def multiquery_search_and_reranking(state: QueryState, llm=None) -> QueryState:
     embeddings = OpenAIEmbeddings()
-    vectorstore: Qdrant = state["vectorstore"] 
-    main_query = state["query"]
-    enhanced_queries = state["enhanced_query"]
-
-    all_queries = [main_query] + enhanced_queries
-    query_embeddings = embeddings.embed_documents(all_queries)
-
-    retrieved_all = []
-
+    vs = state["vectorstore"]
+    all_queries = state["enhanced_query"]
     
-    for query_emb in query_embeddings:
-        docs = vectorstore.similarity_search_by_vector(query_emb, k=5)
-        retrieved_all.extend(docs)
+    print("started embeddings process------------------------------------------------------------------------------>")
+    resp = embeddings.client.create(
+      model="text-embedding-ada-002",
+      input=all_queries
+    )
+    # print(resp)
+    # vectors = [item["embedding"] for item in resp["data"]]
+    vectors = [item.embedding for item in resp.data]
+    # vectors = [embeddings.embed_query(q) for q in all_queries]
 
-    
-    content_counter = defaultdict(list)  
-    for doc in retrieved_all:
-        content_counter[doc.page_content].append(doc)
+    requests = [
+        models.SearchRequest(vector=vec, limit=5, with_payload=True)
+        for vec in vectors
+    ]
+    print("started searching process------------------------------------------------------------------------------>")
+    responses:list[list] = vs.client.search_batch(
+        collection_name=vs.collection_name,
+        requests=requests,
+    )
 
-    ranked = sorted(content_counter.items(), key=lambda x: len(x[1]), reverse=True)
+    retrieved_lists = [
+        [
+            Document(
+                page_content=pt.payload.get("page_content", ""),
+                metadata={**pt.payload, "id": pt.id}
+            )
+            for pt in resp
+        ]
+        for resp in responses
+    ]
 
-    top_docs = [group[1][0] for group in ranked[:6]] 
+    main_query_docs = vs.similarity_search(state["query"], k=5)
+    retrieved_lists.append(main_query_docs)
+    print("finished searching process------------------------------------------------------------------------------>")
+    if not any(retrieved_lists):
+        state["error"] = "No documents retrieved."
+        return state
 
+    # Fuse with RRF
+    print("Retrieved Lists:-------------->", retrieved_lists)
+    fused = reciprocal_rank_fusion(retrieved_lists, k=60)
+    top_docs = [doc for doc, _ in fused[:5]]
     state["retrieved_docs"] = top_docs
     return state
 
-def get_answer(state: QueryState, llm=None) -> QueryState:
+@observe(name="get_answer")
+def get_answer(state: QueryState, llm: Any = None) -> QueryState:
+    print(">>> ANSWER GENERATION")
+    if state["try_count"] > 4:
+        print(">>> Aborting graph: No docs found and already tried once.")
+        raise ValueError("Loop prevention: No retrieved docs after retry.")
+    
     if not state.get("retrieved_docs"):
         state["context"] = "No relevant documents found."
         return state
 
-    retrieved_texts = "\n\n".join([doc.page_content for doc in state["retrieved_docs"]])
+    # Gather dynamic parts
+    query = state["query"]
+    # retrieved_docs = "\n\n".join(doc.page_content for doc in state["retrieved_docs"])
+    # contents = []
+    # for entry in state["retrieved_docs"]:
+    #     # entry[0] is ["page_content", text]
+    #     content_pair = entry[0]
+    #     if isinstance(content_pair, list) and content_pair[0] == "page_content":
+    #         text = content_pair[1]
+    #         contents.append(text)
+    
+    # retrieved_docs_str = "\n\n".join(contents)
+    
+    output_parts = []
+    for entry in state["retrieved_docs"]:
+        if not isinstance(entry, list):
+            continue
+    
+        # Initialize placeholders
+        page_content = title = desc = ""
+    
+        # Entry is a sequence of field/value pairs with scores
+        # Format: [ [field, value], score, [field, value], score, ... ]
+        i = 0
+        while i < len(entry):
+            field_pair = entry[i]
+            if isinstance(field_pair, list) and len(field_pair) == 2:
+                field_name, value = field_pair
+                if field_name == "page_content":
+                    page_content = value or ""
+                elif field_name == "title":
+                    title = value or ""
+                elif field_name == "description":
+                    desc = value or ""
+            i += 2  # skip to next field/value pair (scores are at odd indices)
+    
+        # Build output
+        parts = []
+        if title.strip():
+            parts.append(f"Title: {title.strip()}")
+        if desc.strip():
+            parts.append(f"Description: {desc.strip()}")
+        if page_content.strip():
+            parts.append(page_content.strip())
+    
+        if parts:
+            output_parts.append("\n".join(parts))
+    
+    # retrieved_docs = "\n\n---\n\n".join(output_parts)
+    retrieved_docs=state["retrieved_docs"]
 
-    recent_convo = state.get("recent_convo", "")
-    semantic_memory = state.get("semantic_memory", "")
+    print("Retrieved Docs:----------------------------------------------------------------------------------------->", retrieved_docs)
 
-    prompt = PromptTemplate(
-        input_variables=["query", "retrieved_docs", "recent_convo", "semantic_memory"],
-        template="""You are an expert assistant tasked with answering the user's query using the provided context. 
-        Use the **Retrieved Documents** as the primary source of truth. If available and relevant, incorporate information from the **Recent Conversation** (last 5 turns between the user and assistant) and **Semantic Memory** (long-term context and prior interactions).
-        
-        Guidelines:
-        - If the retrieved documents provide relevant information, generate a clear, accurate, and concise answer based strictly on their content.
-        - If the documents are not relevant or do not address the query, respond with: **"I don't know"**.
-        - If helpful, use the recent conversation and semantic memory to add clarity or fill in missing context, but do not hallucinate.
-        - First, assess the relevance of the documents. If they are relevant, summarize the key points related to the query and then answer. If not, say: **"Not relevant"**.
-        
-        ---
-        
-        **Query:**  
-        {query}
-        
-        **Retrieved Documents:**  
-        {retrieved_docs}
-        
-        **Recent Conversation:**  
-        {recent_convo}
-        
-        **Semantic Memory:**  
-        {semantic_memory}
-        
-        ---
-        
-        Your response:
-        """
+
+    recent_convo= state.get("recent_convo", [])
+    # recent_convo = "\n\n".join(f"{turn['role']}: {turn['content']}" for turn in state.get("recent_convo", []))
+    # recent_convo= "\n\n".join(f"{turn['role']}: {turn['content']}" for turn in state.get("recent_convo", [])) if state.get("recent_convo") else ""
+    # semantic_memory =
+    # semantic_memory = "\n\n".join(doc.page_content for doc in state.get("semantic_memory", []))
+    semantic_memory=""
+    webSearch = state.get("webSearch", "")
+
+    # Combine system instructions and context into one message
+    system_prompt = f"""You are an expert assistant tasked with answering the user's query using the provided context. 
+Use the **Retrieved Documents** as the primary source of truth use description and page content present in metadata. If available and relevant, incorporate information from the **Recent Conversation** (last 5 turns between the user and assistant) and **Semantic Memory** (long-term context and prior interactions).
+
+Guidelines:
+- go through all the document take refernece from source,title,description and page content of the document.If any of the retrieved documents provide relevant information, generate a clear, accurate, and concise answer based strictly on their content. Answer in simple and easy to understand language keeping in mind you are explaining to a learner who doesn't know about the answer but also stick to the context given
+- If all the documents are not relevant or do not address the query, respond with: **"I don't know"**.
+- If helpful, use the recent conversation and semantic memory to add clarity or fill in missing context, but do not hallucinate.
+- First, assess the relevance of the documents. If they are relevant, summarize the key points related to the query and then answer. If not, say: **"Not relevant"**.
+- If **webSearch** is not empty take reference from it
+---
+
+**Query:**  
+{query}
+
+**Retrieved Documents:**  
+{retrieved_docs}
+
+**Recent Conversation:**  
+{recent_convo}
+
+**Semantic Memory:**  
+{semantic_memory}
+
+**Web Search Results:**  
+{webSearch}
+
+Your response:
+"""
+
+    # OpenAI call with only one system message
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        temperature=0,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query}
+        ]
     )
 
-    chain = LLMChain(llm=llm, prompt=prompt)
-    output = chain.run(
-        query=state["query"],
-        retrieved_docs=retrieved_texts,
-        recent_convo=recent_convo,
-        semantic_memory=semantic_memory
-    )
-
-    state["context"] = output
+    # Store the model's answer
+    # state["context"] = response["choices"][0]["message"]["content"].strip()
+    state["context"] = response.choices[0].message.content.strip()
     return state
 
-def evaluate_answer(state: QueryState, llm=None) -> QueryState:
+        
+@observe(name="evaluate_answer")
+def evaluate_answer(state: QueryState) -> QueryState:
     if not state.get("context"):
         state["context"] = "No answer generated."
         return state
@@ -181,37 +287,121 @@ def evaluate_answer(state: QueryState, llm=None) -> QueryState:
     prompt=PromptTemplate(
         input_variables=["query","response"],
         template="""
-        You are an impartial evaluator. Your job is to rate how relevant and helpful a given response is in addressing a user query. 
-        
+        You are an impartial evaluator and be neutral and no sugarcoating.You are Given with query and a response. Your job is to rate how relevant and helpful a given response is in addressing the given query. 
+
         Instructions:
-        1. Carefully compare the response to the original query.
+        1. Carefully compare the response to the given original query.
         2. Consider factual alignment, topical relevance, and how well the response satisfies the query intent.
-        3. Provide a short, specific explanation of your evaluation.
-        4. Then, assign a score from 1 to 10 based on the rubric below.
-        
-        ### Query:
-        {query}
-        
-        ### Response:
-        {response}
-        
+        3. Then, assign a score from 1 to 10 based on the rubric below.
+
         ### Scoring Rubric:
         Score 1-3: Poor — The response is mostly irrelevant, off-topic, or incorrect.
         Score 4-6: Fair — Somewhat relevant, partially addresses the query, but lacks clarity or depth.
         Score 7-8: Good — Mostly relevant and correct, but could be more complete or focused.
         Score 9-10: Excellent — Fully relevant, accurate, and addresses the query thoroughly.
         
-        Format:
-        Feedback: <your brief analysis>  
-        [RESULT] <integer from 1 to 10>
+       **Only return a Json Object with field score which will be between 1-10 based on scoring rubric**
+
+        ### Query:
+        {query}
+        
+        ### Response:
+        {response}
+        
         """
         )
 
     chain = LLMChain(llm=llm, prompt=prompt)
     output = chain.run(query=state["query"], response=state["context"])
-
-    state["evaluation"] = output
+    output_json = json.loads(output)
+    state["evaluation"] = output_json["score"]
     return state
 
-# def query_upgradation(state:QueryState) -> QueryState:
+@observe(name="webSearch")
+def query_upgradation_andSearch(state: QueryState, llm=None) -> QueryState:
+    if not state.get("evaluation") or not isinstance(state["evaluation"], list):
+        state["query"] = "No evaluation available."
+        return state
+
+    search=web_search_tool.run(state['query'])
+    state["webSearch"] = search
+    return state
+
+# @observe(name="is_accuracy_good")
+# def is_accuracy_good(state: QueryState) -> Literal["true", "false"]:
+#     if not state.get("evaluation"):
+#         return "false"
+
+#     score = state["evaluation"]
+#     if score <= 5 and state["try_count"] <= 3:
+#         state["try_count"] += 1
+#         print("try count----------------------------------------------->",state["try_count"])
+#         return "false"
+#     return "true"
+
+from langgraph.graph.state import Command
+from typing import Literal
+
+@observe(name="is_accuracy_good")
+def is_accuracy_good(state: QueryState) -> Command[Literal["true", "false"]]:
+    score = state.get("evaluation", 0)
+    tc = state.get("try_count", 0)
+
+    # If accuracy is acceptable or retries exhausted, exit loop
+    if score > 5 or tc >= 3:
+        return Command(goto="true")
+
+    # Otherwise, increment try_count and loop again
+    return Command(update={"try_count": tc + 1}, goto="false")
+
+def build_langgraph() -> StateGraph:
+    graph_builder = StateGraph(QueryState)
     
+    graph_builder.add_node("query_enhancer", query_enhancer)
+    graph_builder.add_node("multiquery_search_and_reranking", multiquery_search_and_reranking)
+    graph_builder.add_node("get_answer", get_answer)
+    graph_builder.add_node("evaluate_answer", evaluate_answer)
+    graph_builder.add_node("query_upgradation_andSearch", query_upgradation_andSearch)
+    graph_builder.add_node("is_accuracy_good", lambda state:state)
+    
+    graph_builder.add_edge(START, "query_enhancer")
+    # graph_builder.add_edge("query_enhancer", END)
+    graph_builder.add_edge("query_enhancer", "multiquery_search_and_reranking")
+
+    graph_builder.add_edge("multiquery_search_and_reranking", "get_answer")
+    
+    graph_builder.add_edge("get_answer", "evaluate_answer")
+    graph_builder.add_edge("evaluate_answer","is_accuracy_good")
+    # graph_builder.add_conditional_edges(
+    #    "is_accuracy_good",
+    #    lambda state: is_accuracy_good(state),
+    #    {
+    #        False: "query_upgradation_andSearch",
+    #        True: END,
+    #    }
+    # )
+#     graph_builder.add_conditional_edges(
+#     "is_accuracy_good",
+#     lambda state: "query_upgradation_andSearch" if not is_accuracy_good(state) else END
+#   )
+    # graph_builder.add_conditional_edges(
+    # "is_accuracy_good",
+    # lambda state: "query_upgradation_andSearch" 
+    #               if not is_accuracy_good(state) 
+    #               else END
+    # )
+    graph_builder.add_conditional_edges(
+    "is_accuracy_good",                      # Source node
+    is_accuracy_good,
+    {
+        "false": "query_upgradation_andSearch",  
+        "true": END,                             
+    }
+)
+    # graph_builder.add_edge("is_accuracy_good", "query_upgradation_andSearch", condition=lambda state: is_accuracy_good(state) == "false")
+    # graph_builder.add_edge("is_accuracy_good", END, condition=lambda state: is_accuracy_good(state) == "true")
+    graph_builder.add_edge("query_upgradation_andSearch", "get_answer")
+
+    # print(graph_builder.get_edges())
+
+    return graph_builder.compile().with_config({"callbacks": [langfuse_handler]})

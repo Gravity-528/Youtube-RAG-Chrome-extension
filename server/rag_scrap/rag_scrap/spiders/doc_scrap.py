@@ -7,7 +7,7 @@ class RecursiveInMemorySpider(scrapy.Spider):
     name = "documentation"
     visited = set()
     scraped_docs = []
-    max_pages = 25
+    max_pages = 5
 
     # custom_settings = {
     #     "REDIRECT_ENABLED": False  # Optional: block 301/302 redirects to offsite domains
@@ -22,8 +22,7 @@ class RecursiveInMemorySpider(scrapy.Spider):
         self.base_domain = urlparse(self.start_url).netloc
         self.allowed_domains = [self.base_domain]
 
-    async def start(self):
-        # New async start method for Scrapy 2.13+
+    def start(self):
         yield scrapy.Request(url=self.start_url, callback=self.parse)
 
     def parse(self, response):
@@ -77,5 +76,5 @@ process = CrawlerProcess(
     }
 )
 
-process.crawl(RecursiveInMemorySpider)
-process.start()
+# process.crawl(RecursiveInMemorySpider)
+# process.start()

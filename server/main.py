@@ -1,7 +1,9 @@
 import uvicorn
-from .app import app
+from app import app
+import os
 
 def main():
     uvicorn.run(app,port=8000,host="0.0.0.0")
 
-main()
+if __name__ == "__main__":
+    main()

@@ -4,6 +4,7 @@ __pycache__/
 *.pyd
 *.so
 venv/
-.env/
+.env
 .devcontainer/
 requirement.txt
+rag_scrap/
