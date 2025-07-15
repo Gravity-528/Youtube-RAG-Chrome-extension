@@ -12,6 +12,11 @@ const App = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    chrome.storage.local.get("chatMessages", (data) => {
+    if (data.chatMessages) {
+      setMessages(data.chatMessages);
+    }
+    });
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.action === "openPopupWithText") {
         chrome.storage.local.get("selectedText", (data) => {
@@ -20,6 +25,10 @@ const App = () => {
       }
     });
   }, []);
+
+  useEffect(() => {
+    chrome.storage.local.set({ chatMessages: messages });
+  }, [messages]);
 
   const handleIngest = async () => {
     const { data } = await chrome.storage.local.get("data");

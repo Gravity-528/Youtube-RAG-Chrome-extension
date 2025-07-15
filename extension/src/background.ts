@@ -25,14 +25,6 @@ chrome.runtime.onInstalled.addListener(() => {
             console.error("Error during authentication:", error);
         }
     });
-    // chrome.identity.getProfileUserInfo({ accountStatus: "ANY" }, (user) => {
-    //     console.log("Profile UserInfo:", user);
-    //     if (user.email) {
-    //         chrome.storage.local.set({ email: user.email });
-    //     } else {
-    //         console.warn("Email empty: user not signed in to Chrome or identity.email not granted.");
-    //     }
-    // });
 });
 
 
@@ -117,18 +109,33 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
 });
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async(request, sender, sendResponse) => {
     if (request.action === "openPopupWithText") {
         console.log("Received openPopupWithText request:", request.text);
         sendResponse({ status: "success", text: request.text });
+    }else if (request.action === "StoreQuery") {
+        console.log("Received StoreQuery request:", request.query);
+
+        const { data: data1 } = await chrome.storage.local.get("data");
+        let data = {
+        type: "doc",
+        url: data1?.url,
+        email: data1?.email || "",
+        };
+        
+        try{
+        const response = await axios.post("http://localhost:8000/query_rag_answer", {
+          query: request.query,
+          url: data?.url,
+          email: data?.email,
+        });
+        sendResponse({ status: "success",explanation:response.data.answer });
+
+        }catch(error){
+            console.error("Error during StoreQuery:", error);
+            sendResponse({ status: "error", message: "Error during StoreQuery." });
+            return;
+        }     
     } 
 });
-
-chrome.runtime.onMessage.addListener(async(request, sender, sendResponse) => {
-    if(request.action==="StoreQuery") {
-        console.log("Received StoreQuery request:", request.query);
-        await chrome.storage.local.set({ query: request.query });
-        sendResponse({ status: "success" });
-    }
-})
 

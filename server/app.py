@@ -32,8 +32,6 @@ from fastapi import Request
 # )
 
 
-
-
 inngest_client = inngest.Inngest(
     app_id="rag_pipeline_worker",
     logger=logging.getLogger("uvicorn"),
@@ -149,6 +147,7 @@ def query_rag_answer(
         "recent_convo": None,
         "semantic_memory": None,
         "try_count": 0,
+        "is_accurate": True,
         "evaluation": None,
         "webSearch": None,
         "vectorstore": vectorstore,
@@ -156,7 +155,7 @@ def query_rag_answer(
     }
     
     graph= build_langgraph()
-    answer = graph.invoke(state,config={"recursion_limit": 5})
+    answer = graph.invoke(state)
     # answer =graph.invoke(state, config=RunnableConfig(recursion_limit=3))
     # if not answer:
     #     return {"message": "No answer found for the provided query."}

@@ -106,29 +106,51 @@ function createOrUpdatePopover(
     askButton.style.opacity = "0.6";
     askButton.style.cursor = "not-allowed";
   } else {
-    askButton.addEventListener("click", (e) => {
-      e.stopPropagation();
+  askButton.addEventListener("click", async (e) => {
+    e.stopPropagation();
 
-      askButton.remove();
-      isLoading = true;
-      createOrUpdatePopover(text, x, y, "", isLoading);
+    askButton.remove();
+    isLoading = true;
+    createOrUpdatePopover(text, x, y, "", isLoading);
 
-      chrome.runtime.sendMessage(
-        {
-          action: "StoreQuery",
-          text: `"${text}" — explain its meaning in the context of documentation.`,
-        },
-        (response) => {
-          console.log("Response from StoreQuery:", response);
+    // chrome.runtime.sendMessage(
+    //   {
+    //     action: "StoreQuery",
+    //     text: `"${text}" — explain its meaning in the context of documentation.`,
+    //   },
+    //   (response) => {
+    //     console.log("Response from StoreQuery:", response);
 
-          setTimeout(() => {
-            currentExplanation = "This is a dummy explanation";
-            isLoading = false;
-            createOrUpdatePopover(text, x, y, currentExplanation, isLoading);
-          }, 1200);
-        }
-      );
-    });
+    //     setTimeout(() => {
+    //       currentExplanation = "This is a dummy explanation";
+    //       isLoading = false;
+    //       createOrUpdatePopover(text, x, y, currentExplanation, isLoading);
+    //     }, 1200);
+    //   }
+    // );
+
+    try {
+        const response = await new Promise<{ explanation?: string }>((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              action: "StoreQuery",
+              text: `${text} — explain its meaning in the context of documentation.`,
+            },
+            (response) => {
+              resolve(response);
+            }
+          );
+        });
+    
+        currentExplanation = response?.explanation || "No explanation returned";
+      } catch (error) {
+        console.error("Error getting explanation:", error);
+        currentExplanation = "Error fetching explanation.";
+      }
+
+      isLoading = false;
+      createOrUpdatePopover(text, x, y, currentExplanation, isLoading);
+  });
   }
 
   if (!isLoading) {

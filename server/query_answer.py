@@ -1,3 +1,4 @@
+import time
 from langgraph.graph import StateGraph, START, END
 from langchain.prompts import PromptTemplate
 from langchain.schema import BaseOutputParser,Document
@@ -55,6 +56,7 @@ class QueryState(TypedDict):
     recent_convo: Union[List[dict], None]
     semantic_memory: Union[List[Document], None]
     try_count: int
+    is_accurate: bool
     evaluation: int
     webSearch: Union[str, None]
     vectorstore: Qdrant
@@ -96,15 +98,10 @@ def reciprocal_rank_fusion(results: list[list], k=60):
             title = doc.metadata.get("title", "").strip()
             desc = doc.metadata.get("description", "").strip()
             combined = f"{source} | {title} | {desc}".strip(" | ")
-            # Optionally hash to a fixed-length key
             key = hashlib.sha256(combined.encode("utf-8")).hexdigest()
-            # if not key:
-            #     # as fallback, use hash of content + metadata
-            #     key = hash((doc.page_content, str(doc.metadata)))
             scores[key] += 1 / (rank + k)
             doc_map[key] = doc
 
-    # Return sorted list of Document objects with scores
     fused = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     return [(doc_map[key], score) for key, score in fused]
 
@@ -147,13 +144,12 @@ def multiquery_search_and_reranking(state: QueryState, llm=None) -> QueryState:
 
     main_query_docs = vs.similarity_search(state["query"], k=5)
     retrieved_lists.append(main_query_docs)
-    print("finished searching process------------------------------------------------------------------------------>")
+    # print("finished searching process------------------------------------------------------------------------------>")
     if not any(retrieved_lists):
         state["error"] = "No documents retrieved."
         return state
 
-    # Fuse with RRF
-    print("Retrieved Lists:-------------->", retrieved_lists)
+    # print("Retrieved Lists:-------------->", retrieved_lists)
     fused = reciprocal_rank_fusion(retrieved_lists, k=60)
     top_docs = [doc for doc, _ in fused[:5]]
     state["retrieved_docs"] = top_docs
@@ -164,35 +160,22 @@ def get_answer(state: QueryState, llm: Any = None) -> QueryState:
     print(">>> ANSWER GENERATION")
     if state["try_count"] > 4:
         print(">>> Aborting graph: No docs found and already tried once.")
-        raise ValueError("Loop prevention: No retrieved docs after retry.")
+        return state
     
+    state["try_count"] = state.get("try_count", 0) + 1
     if not state.get("retrieved_docs"):
         state["context"] = "No relevant documents found."
         return state
 
-    # Gather dynamic parts
     query = state["query"]
-    # retrieved_docs = "\n\n".join(doc.page_content for doc in state["retrieved_docs"])
-    # contents = []
-    # for entry in state["retrieved_docs"]:
-    #     # entry[0] is ["page_content", text]
-    #     content_pair = entry[0]
-    #     if isinstance(content_pair, list) and content_pair[0] == "page_content":
-    #         text = content_pair[1]
-    #         contents.append(text)
-    
-    # retrieved_docs_str = "\n\n".join(contents)
     
     output_parts = []
     for entry in state["retrieved_docs"]:
         if not isinstance(entry, list):
             continue
     
-        # Initialize placeholders
         page_content = title = desc = ""
     
-        # Entry is a sequence of field/value pairs with scores
-        # Format: [ [field, value], score, [field, value], score, ... ]
         i = 0
         while i < len(entry):
             field_pair = entry[i]
@@ -204,9 +187,8 @@ def get_answer(state: QueryState, llm: Any = None) -> QueryState:
                     title = value or ""
                 elif field_name == "description":
                     desc = value or ""
-            i += 2  # skip to next field/value pair (scores are at odd indices)
+            i += 2 
     
-        # Build output
         parts = []
         if title.strip():
             parts.append(f"Title: {title.strip()}")
@@ -221,7 +203,7 @@ def get_answer(state: QueryState, llm: Any = None) -> QueryState:
     # retrieved_docs = "\n\n---\n\n".join(output_parts)
     retrieved_docs=state["retrieved_docs"]
 
-    print("Retrieved Docs:----------------------------------------------------------------------------------------->", retrieved_docs)
+    # print("Retrieved Docs:----------------------------------------------------------------------------------------->", retrieved_docs)
 
 
     recent_convo= state.get("recent_convo", [])
@@ -234,35 +216,34 @@ def get_answer(state: QueryState, llm: Any = None) -> QueryState:
 
     # Combine system instructions and context into one message
     system_prompt = f"""You are an expert assistant tasked with answering the user's query using the provided context. 
-Use the **Retrieved Documents** as the primary source of truth use description and page content present in metadata. If available and relevant, incorporate information from the **Recent Conversation** (last 5 turns between the user and assistant) and **Semantic Memory** (long-term context and prior interactions).
+    Use the **Retrieved Documents** as the primary source of truth use description and page content present in metadata. If available and relevant, incorporate information from the **Recent Conversation** (last 5 turns between the user and assistant) and **Semantic Memory** (long-term context and prior interactions).
+    
+    Guidelines:
+    - go through all the document take refernece from source,title,description and page content of the document.If any of the retrieved documents provide relevant information, generate a clear, accurate, and concise answer based strictly on their content. Answer in simple and easy to understand language keeping in mind you are explaining to a learner who doesn't know about the answer but also stick to the context given. Also return the most important url of all the documents present in the context.
+    - If all the documents are not relevant or do not address the query, respond with: **"I don't know"**.
+    - If helpful, use the recent conversation and semantic memory to add clarity or fill in missing context, but do not hallucinate.
+    - First, assess the relevance of the documents. If they are relevant, summarize the key points related to the query and then answer. If not, say: **"Not relevant"**.
+    - If **webSearch** is not empty take reference from it
+    ---
+    
+    **Query:**  
+    {query}
+    
+    **Retrieved Documents:**  
+    {retrieved_docs}
+    
+    **Recent Conversation:**  
+    {recent_convo}
+    
+    **Semantic Memory:**  
+    {semantic_memory}
+    
+    **Web Search Results:**  
+    {webSearch}
+    
+    Your response:
+    """
 
-Guidelines:
-- go through all the document take refernece from source,title,description and page content of the document.If any of the retrieved documents provide relevant information, generate a clear, accurate, and concise answer based strictly on their content. Answer in simple and easy to understand language keeping in mind you are explaining to a learner who doesn't know about the answer but also stick to the context given
-- If all the documents are not relevant or do not address the query, respond with: **"I don't know"**.
-- If helpful, use the recent conversation and semantic memory to add clarity or fill in missing context, but do not hallucinate.
-- First, assess the relevance of the documents. If they are relevant, summarize the key points related to the query and then answer. If not, say: **"Not relevant"**.
-- If **webSearch** is not empty take reference from it
----
-
-**Query:**  
-{query}
-
-**Retrieved Documents:**  
-{retrieved_docs}
-
-**Recent Conversation:**  
-{recent_convo}
-
-**Semantic Memory:**  
-{semantic_memory}
-
-**Web Search Results:**  
-{webSearch}
-
-Your response:
-"""
-
-    # OpenAI call with only one system message
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         temperature=0,
@@ -272,7 +253,6 @@ Your response:
         ]
     )
 
-    # Store the model's answer
     # state["context"] = response["choices"][0]["message"]["content"].strip()
     state["context"] = response.choices[0].message.content.strip()
     return state
@@ -282,7 +262,7 @@ Your response:
 def evaluate_answer(state: QueryState) -> QueryState:
     if not state.get("context"):
         state["context"] = "No answer generated."
-        return state
+        raise ValueError("No context available for evaluation.")
 
     prompt=PromptTemplate(
         input_variables=["query","response"],
@@ -309,51 +289,50 @@ def evaluate_answer(state: QueryState) -> QueryState:
         {response}
         
         """
-        )
+    )
 
     chain = LLMChain(llm=llm, prompt=prompt)
     output = chain.run(query=state["query"], response=state["context"])
-    output_json = json.loads(output)
-    state["evaluation"] = output_json["score"]
+    try:
+        output_json = json.loads(output)
+        state["evaluation"] = output_json["score"]
+    except Exception as e:
+        print(f"Error parsing output: {output}. Exception: {e}")
+        state["evaluation"] = 0
     return state
 
 @observe(name="webSearch")
 def query_upgradation_andSearch(state: QueryState, llm=None) -> QueryState:
-    if not state.get("evaluation") or not isinstance(state["evaluation"], list):
+    if not state.get("evaluation") or not isinstance(state["evaluation"], int):
+        print("type--------------------------------------------------------------->",type(state["evaluation"]))
         state["query"] = "No evaluation available."
         return state
 
     search=web_search_tool.run(state['query'])
+    print("Web Search Results:----------------------------------------------------------------------------------------->", search)
     state["webSearch"] = search
+    time.sleep(1)
     return state
-
-# @observe(name="is_accuracy_good")
-# def is_accuracy_good(state: QueryState) -> Literal["true", "false"]:
-#     if not state.get("evaluation"):
-#         return "false"
-
-#     score = state["evaluation"]
-#     if score <= 5 and state["try_count"] <= 3:
-#         state["try_count"] += 1
-#         print("try count----------------------------------------------->",state["try_count"])
-#         return "false"
-#     return "true"
 
 from langgraph.graph.state import Command
 from typing import Literal
 
-@observe(name="is_accuracy_good")
-def is_accuracy_good(state: QueryState) -> Command[Literal["true", "false"]]:
+# @observe(name="is_accuracy_good")
+def is_accuracy_good(state: QueryState) -> Literal["query_upgradation_andSearch", "other_part"]:
     score = state.get("evaluation", 0)
     tc = state.get("try_count", 0)
 
-    # If accuracy is acceptable or retries exhausted, exit loop
+    print("try count---------------------------------------------------------------------------------------------------------------->", tc)
+
     if score > 5 or tc >= 3:
-        return Command(goto="true")
+        return "other_part"
 
-    # Otherwise, increment try_count and loop again
-    return Command(update={"try_count": tc + 1}, goto="false")
+    return "query_upgradation_andSearch"
 
+@observe(name="other_part")
+def other_part(state: QueryState) -> QueryState:
+    return state
+   
 def build_langgraph() -> StateGraph:
     graph_builder = StateGraph(QueryState)
     
@@ -362,46 +341,18 @@ def build_langgraph() -> StateGraph:
     graph_builder.add_node("get_answer", get_answer)
     graph_builder.add_node("evaluate_answer", evaluate_answer)
     graph_builder.add_node("query_upgradation_andSearch", query_upgradation_andSearch)
-    graph_builder.add_node("is_accuracy_good", lambda state:state)
-    
+    # graph_builder.add_node("is_accuracy_good", is_accuracy_good)
+    graph_builder.add_node("other_part", other_part)
+
     graph_builder.add_edge(START, "query_enhancer")
-    # graph_builder.add_edge("query_enhancer", END)
     graph_builder.add_edge("query_enhancer", "multiquery_search_and_reranking")
-
     graph_builder.add_edge("multiquery_search_and_reranking", "get_answer")
-    
     graph_builder.add_edge("get_answer", "evaluate_answer")
-    graph_builder.add_edge("evaluate_answer","is_accuracy_good")
-    # graph_builder.add_conditional_edges(
-    #    "is_accuracy_good",
-    #    lambda state: is_accuracy_good(state),
-    #    {
-    #        False: "query_upgradation_andSearch",
-    #        True: END,
-    #    }
-    # )
-#     graph_builder.add_conditional_edges(
-#     "is_accuracy_good",
-#     lambda state: "query_upgradation_andSearch" if not is_accuracy_good(state) else END
-#   )
-    # graph_builder.add_conditional_edges(
-    # "is_accuracy_good",
-    # lambda state: "query_upgradation_andSearch" 
-    #               if not is_accuracy_good(state) 
-    #               else END
-    # )
     graph_builder.add_conditional_edges(
-    "is_accuracy_good",                      # Source node
+    "evaluate_answer",                      
     is_accuracy_good,
-    {
-        "false": "query_upgradation_andSearch",  
-        "true": END,                             
-    }
-)
-    # graph_builder.add_edge("is_accuracy_good", "query_upgradation_andSearch", condition=lambda state: is_accuracy_good(state) == "false")
-    # graph_builder.add_edge("is_accuracy_good", END, condition=lambda state: is_accuracy_good(state) == "true")
+   )
     graph_builder.add_edge("query_upgradation_andSearch", "get_answer")
-
-    # print(graph_builder.get_edges())
-
+    graph_builder.add_edge("other_part", END)
+    
     return graph_builder.compile().with_config({"callbacks": [langfuse_handler]})
