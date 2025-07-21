@@ -137,11 +137,12 @@ function createOrUpdatePopover(
               text: `${text} — explain its meaning in the context of documentation.`,
             },
             (response) => {
+              console.log("Response from StoreQuery3 immediate:", response);
               resolve(response);
             }
           );
         });
-    
+        console.log("Response from StoreQuery3:", response);
         currentExplanation = response?.explanation || "No explanation returned";
       } catch (error) {
         console.error("Error getting explanation:", error);

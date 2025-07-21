@@ -307,7 +307,7 @@ def query_upgradation_andSearch(state: QueryState, llm=None) -> QueryState:
         print("type--------------------------------------------------------------->",type(state["evaluation"]))
         state["query"] = "No evaluation available."
         return state
-
+    time.sleep(3)
     search=web_search_tool.run(state['query'])
     print("Web Search Results:----------------------------------------------------------------------------------------->", search)
     state["webSearch"] = search

@@ -109,33 +109,58 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
 });
 
-chrome.runtime.onMessage.addListener(async(request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "openPopupWithText") {
         console.log("Received openPopupWithText request:", request.text);
         sendResponse({ status: "success", text: request.text });
     }else if (request.action === "StoreQuery") {
-        console.log("Received StoreQuery request:", request.query);
+        console.log("Received StoreQuery request:", request.text);
 
-        const { data: data1 } = await chrome.storage.local.get("data");
-        let data = {
-        type: "doc",
-        url: data1?.url,
-        email: data1?.email || "",
-        };
+        // const { data: data1 } = await chrome.storage.local.get("data");
+        // let data = {
+        // type: "doc",
+        // url: data1?.url,
+        // email: data1?.email || "",
+        // };
+
+        // // console.log("Data retrieved from storage:", data);
         
-        try{
-        const response = await axios.post("http://localhost:8000/query_rag_answer", {
-          query: request.query,
-          url: data?.url,
-          email: data?.email,
-        });
-        sendResponse({ status: "success",explanation:response.data.answer });
+        // try{
+        // const response = await axios.post("http://localhost:8000/query_rag_answer", {
+        //   query: request.text,
+        //   url: data?.url,
+        //   email: data?.email,
+        // });
+        // // console.log("Response from StoreQuery:", response);
+        // sendResponse({ status: "success",explanation:response.data.answer });
 
-        }catch(error){
-            console.error("Error during StoreQuery:", error);
-            sendResponse({ status: "error", message: "Error during StoreQuery." });
-            return;
-        }     
+        // }catch(error){
+        //     console.error("Error during StoreQuery:", error);
+        //     sendResponse({ status: "error", message: "Error during StoreQuery." });
+        //     return;
+        // }   
+    (async () => {
+      try {
+        const { data: data1 } = await chrome.storage.local.get("data");
+        const data = {
+          type: "doc",
+          url: data1?.url,
+          email: data1?.email || "",
+        };
+
+        const response = await axios.post("http://localhost:8000/query_rag_answer", {
+          query: request.text,
+          url: data.url,
+          email: data.email,
+        });
+
+        sendResponse({ status: "success", explanation: response.data.answer });
+      } catch (error) {
+        console.error("Error during StoreQuery:", error);
+        sendResponse({ status: "error", message: "Error during StoreQuery." });
+      }
+    })();
+        return true; // Keep the message channel open for sendResponse  
     } 
 });
 
