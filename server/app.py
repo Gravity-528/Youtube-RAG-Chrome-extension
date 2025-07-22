@@ -1,5 +1,6 @@
 import os,requests
-os.environ.setdefault("INNGEST_DEV", "1")
+# os.environ.setdefault("INNGEST_DEV", "1")
+os.environ["INNGEST_DEV"] = "0"
 from scrapy.utils.reactor import install_reactor
 install_reactor("twisted.internet.asyncioreactor.AsyncioSelectorReactor")
 from fastapi import FastAPI,Query
