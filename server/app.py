@@ -34,6 +34,7 @@ from fastapi import Request
 
 inngest_client = inngest.Inngest(
     app_id="rag_pipeline_worker",
+    signing_key=os.getenv("INNGEST_SIGNING_KEY"),
     logger=logging.getLogger("uvicorn"),
 )
 
@@ -88,6 +89,8 @@ async def lifespan(app: FastAPI):
         try:
             url = f"{base}/api/inngest?deployId={deploy_id}"
             resp = requests.put(url, headers={"Authorization": f"Bearer {key}"}, timeout=10)
+            app.logger.info(f"Sync sent Authorization: {resp.request.headers.get('Authorization')}")
+            app.logger.info(f"Sync response code: {resp.status_code}, body: {resp.text}")
             resp.raise_for_status()
         except Exception as e:
             app.logger.error("Inngest sync failed:", exc_info=e)
