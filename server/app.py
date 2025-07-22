@@ -90,6 +90,17 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def sync_inngest():
+    key = os.getenv("INNGEST_SIGNING_KEY")
+    commit = os.getenv("RENDER_GIT_COMMIT")
+    base = os.getenv("RENDER_EXTERNAL_URL")
+    if key and commit and base:
+        url = f"{base}/api/inngest?deployId={commit}"
+        resp = requests.put(url, headers={"Authorization": f"Bearer {key}"})
+        resp.raise_for_status()
+
+
 @app.get('/')
 async def func():
     print("hello how are you")
