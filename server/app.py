@@ -77,7 +77,24 @@ async def process_case(ctx: inngest.Context):
         raise ValueError(f"Unsupported type {state['type']}")
 
 
-app=FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield 
+    key = os.getenv("INNGEST_SIGNING_KEY")
+    deploy_id = os.getenv("RENDER_GIT_COMMIT")
+    base = os.getenv("RENDER_EXTERNAL_URL")
+    if key and deploy_id and base:
+        try:
+            url = f"{base}/api/inngest?deployId={deploy_id}"
+            resp = requests.put(url, headers={"Authorization": f"Bearer {key}"}, timeout=10)
+            resp.raise_for_status()
+        except Exception as e:
+            app.logger.error("Inngest sync failed:", exc_info=e)
+
+
+
+app=FastAPI(lifespan=lifespan)
 
 inngest.fast_api.serve(app, inngest_client, [process_case], serve_path="/api/inngest")
 
@@ -88,17 +105,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def sync_inngest():
-    key = os.getenv("INNGEST_SIGNING_KEY")
-    commit = os.getenv("RENDER_GIT_COMMIT")
-    base = os.getenv("RENDER_EXTERNAL_URL")
-    if key and commit and base:
-        url = f"{base}/api/inngest?deployId={commit}"
-        resp = requests.put(url, headers={"Authorization": f"Bearer {key}"})
-        resp.raise_for_status()
 
 
 @app.get('/')
