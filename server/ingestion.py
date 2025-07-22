@@ -5,10 +5,10 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
-from scrapy import signals
-from scrapy.crawler import CrawlerProcess
-from scrapy.signalmanager import dispatcher
-from rag_scrap.rag_scrap.spiders.doc_scrap import RecursiveInMemorySpider
+# from scrapy import signals
+# from scrapy.crawler import CrawlerProcess
+# from scrapy.signalmanager import dispatcher
+# from rag_scrap.rag_scrap.spiders.doc_scrap import RecursiveInMemorySpider
 
 from langgraph.graph import StateGraph, START, END
 from typing import TypedDict
@@ -35,13 +35,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 import time
 
-import spacy
+# import spacy
 import re
 from langchain_community.document_loaders import SeleniumURLLoader
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.service import Service
 
-nlp = spacy.load("xx_sent_ud_sm")
+# nlp = spacy.load("xx_sent_ud_sm")
 
 def clean_text(text):
     return text.replace("\n", " ").replace("[Music]", "").strip()
