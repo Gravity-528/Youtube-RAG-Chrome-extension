@@ -1,4 +1,4 @@
-import os
+import os,requests
 os.environ.setdefault("INNGEST_DEV", "1")
 from scrapy.utils.reactor import install_reactor
 install_reactor("twisted.internet.asyncioreactor.AsyncioSelectorReactor")
