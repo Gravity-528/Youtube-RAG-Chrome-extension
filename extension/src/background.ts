@@ -148,7 +148,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           email: data1?.email || "",
         };
 
-        const response = await axios.post("http://localhost:8000/query_rag_answer", {
+        const response = await axios.post("https://youtube-rag-chrome-extension.onrender.com/query_rag_answer", {
           query: request.text,
           url: data.url,
           email: data.email,

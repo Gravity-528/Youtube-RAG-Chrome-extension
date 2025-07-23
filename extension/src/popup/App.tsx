@@ -39,7 +39,7 @@ const App = () => {
   console.error("Email not yet available.");
   return;
 }
-      const response = await axios.post("http://localhost:8000/ingest", {
+      const response = await axios.post("https://youtube-rag-chrome-extension.onrender.com/ingest", {
         type: data?.type,
         url: data?.url,
         email: data?.email,
@@ -92,7 +92,7 @@ const App = () => {
     });
 
     try {
-      const response = await axios.post("http://localhost:8000/query_rag_answer", {
+      const response = await axios.post("https://youtube-rag-chrome-extension.onrender.com/query_rag_answer", {
         query: input,
         url: data?.url,
         email: data?.email,

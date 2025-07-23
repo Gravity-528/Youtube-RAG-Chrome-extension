@@ -48,7 +48,11 @@ def clean_text(text):
 
 def fetch_transcript(video_id, preferred_languages=["hi", "en"]):
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=preferred_languages)
+        proxy={
+            "http": "http://lklwqxud:apotse6lmhcl@23.95.150.145:6114",
+            "https": "http://lklwqxud:apotse6lmhcl@23.95.150.145:6114"
+        }
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=preferred_languages, proxies=proxy)
         return transcript
     except TranscriptsDisabled:
         print("No captions available for this video")
