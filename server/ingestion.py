@@ -215,7 +215,8 @@ def scrape_recursive(start_url, max_pages=30, headless=True):
 
 
 def youtube_ingestion(video_id: str, email: str)->None:
-    transcript=YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+    # transcript=YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+    transcript=fetch_transcript(video_id,languages=['en', 'hi'])
     if not transcript:
         raise TranscriptsDisabled("No captions available for this video")
     pass
