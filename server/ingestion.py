@@ -1,3 +1,4 @@
+import os
 from scrapy.utils.reactor import install_reactor
 install_reactor("twisted.internet.asyncioreactor.AsyncioSelectorReactor")
 
@@ -13,7 +14,7 @@ from urllib.parse import urljoin, urlparse
 from langgraph.graph import StateGraph, START, END
 from typing import TypedDict
 
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, RequestBlocked
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
@@ -40,6 +41,7 @@ import re
 from langchain_community.document_loaders import SeleniumURLLoader
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.service import Service
+from youtube_transcript_api.proxies import WebshareProxyConfig
 
 # nlp = spacy.load("xx_sent_ud_sm")
 
@@ -47,49 +49,95 @@ def clean_text(text):
     return text.replace("\n", " ").replace("[Music]", "").strip()
 
 def fetch_transcript(video_id, preferred_languages=["hi", "en"]):
+    ytt_api = YouTubeTranscriptApi(
+        proxy_config=WebshareProxyConfig(
+            proxy_username=os.getenv("PROXY_USERNAME"),
+            proxy_password=os.getenv("PROXY_PASSWORD"),
+        )
+    )
     try:
-        proxy={
-            "http": "http://lklwqxud:apotse6lmhcl@23.95.150.145:6114",
-            "https": "http://lklwqxud:apotse6lmhcl@23.95.150.145:6114"
-        }
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=preferred_languages, proxies=proxy)
-        return transcript
+        fetched = ytt_api.fetch(video_id, languages=preferred_languages)
+        return fetched.to_raw_data()
     except TranscriptsDisabled:
         print("No captions available for this video")
+        return []
+    except RequestBlocked:
+        print("Request blocked, possibly due to rate limiting or IP issues")
         return []
 
 
 from langchain.schema import Document
 
+# def chunk_by_multilingual_sentences_with_timestamps(transcript_list, chunk_size=1000, chunk_overlap=200):
+#     full_text = ""
+#     time_map = []
+#     for entry in transcript_list:
+#         clean = clean_text(entry["text"])
+#         if not clean:
+#             continue
+#         offset = len(full_text)
+#         full_text += clean + " "
+#         time_map.append((offset, entry["start"]))
+
+#     chunks = []
+#     i = 0
+#     text_len = len(full_text)
+
+#     while i < text_len:
+#         end = min(text_len, i + chunk_size)
+#         chunk_text = full_text[i:end].strip()
+
+#         ts = 0.0
+#         for offset, start in time_map:
+#             if offset <= i:
+#                 ts = start
+#             else:
+#                 break
+
+#         chunks.append(Document(page_content=chunk_text, metadata={"start_time": ts}))
+
+#         i = end - chunk_overlap
+
+#     return chunks
+
 def chunk_by_multilingual_sentences_with_timestamps(transcript_list, chunk_size=1000, chunk_overlap=200):
-    full_text = ""
-    time_map = []
-    for entry in transcript_list:
-        clean = clean_text(entry["text"])
-        if not clean:
-            continue
-        offset = len(full_text)
-        full_text += clean + " "
-        time_map.append((offset, entry["start"]))
-
     chunks = []
-    i = 0
-    text_len = len(full_text)
+    current_chunk = ""
+    current_start = None
+    idx = 0
 
-    while i < text_len:
-        end = min(text_len, i + chunk_size)
-        chunk_text = full_text[i:end].strip()
+    try:
+        while idx < len(transcript_list):
+            current_chunk = ""
+            current_start = transcript_list[idx]["start"]
+            i = idx
+    
+            # Build chunk up to 1000 characters
+            while i < len(transcript_list) and len(current_chunk) + len(transcript_list[i]["text"]) + 1 <= 1000:
+                current_chunk += transcript_list[i]["text"].strip() + " "
+                i += 1
+    
+            # Save the chunk
+            chunks.append(Document(
+                page_content=current_chunk.strip(),
+                metadata={"start": current_start}
+            ))
+    
+            # Move index forward for next chunk with 200 character overlap
+            # We re-calculate how many characters to backtrack
+            if i == len(transcript_list):
+                break  # no more to process
+    
+            # Start at the first subtitle entry that gives an overlap of ~200 chars
+            overlap_chars = 0
+            idx = i - 1
+            while idx > 0 and overlap_chars < 200:
+                overlap_chars += len(transcript_list[idx]["text"]) + 1
+                idx -= 1
+            idx += 1  # 
 
-        ts = 0.0
-        for offset, start in time_map:
-            if offset <= i:
-                ts = start
-            else:
-                break
-
-        chunks.append(Document(page_content=chunk_text, metadata={"start_time": ts}))
-
-        i = end - chunk_overlap
+    except Exception as e:
+        print(f"Error while chunking transcript: {e}")
 
     return chunks
 
@@ -104,8 +152,6 @@ class State(TypedDict):
     type: str 
     email: str
 
-# def web_scraping(state:State)-> State:
-#     pass
 
 def extract_domain(url: str) -> str:
     from urllib.parse import urlparse
