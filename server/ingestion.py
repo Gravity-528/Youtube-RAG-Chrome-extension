@@ -55,6 +55,7 @@ def fetch_transcript(video_id, preferred_languages=["hi", "en"]):
     #     #     proxy_password=os.getenv("PROXY_PASSWORD"),
     #     # )
     # )
+    print("transcript is :iiiiiiiiiiiiiiiiii<", video_id, preferred_languages)
     try:
         # fetched = ytt_api.fetch(video_id, languages=preferred_languages)
         fetched=YouTubeTranscriptApi.get_transcript(video_id, preferred_languages)
