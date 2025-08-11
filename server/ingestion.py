@@ -53,6 +53,7 @@ def fetch_transcript(video_id, preferred_languages=["hi", "en"]):
         proxy_config=WebshareProxyConfig(
             proxy_username=os.getenv("PROXY_USERNAME"),
             proxy_password=os.getenv("PROXY_PASSWORD"),
+            proxy_server='p.webshare.io:80'
         )
     )
     # print("transcript is :iiiiiiiiiiiiiiiiii<", video_id, preferred_languages)
