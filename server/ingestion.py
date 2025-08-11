@@ -50,10 +50,10 @@ def clean_text(text):
 
 def fetch_transcript(video_id, preferred_languages=["hi", "en"]):
     ytt_api = YouTubeTranscriptApi(
-        # proxy_config=WebshareProxyConfig(
-        #     proxy_username=os.getenv("PROXY_USERNAME"),
-        #     proxy_password=os.getenv("PROXY_PASSWORD"),
-        # )
+        proxy_config=WebshareProxyConfig(
+            proxy_username=os.getenv("PROXY_USERNAME"),
+            proxy_password=os.getenv("PROXY_PASSWORD"),
+        )
     )
     # print("transcript is :iiiiiiiiiiiiiiiiii<", video_id, preferred_languages)
     try:
