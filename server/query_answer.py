@@ -24,7 +24,17 @@ from langchain_core.output_parsers.string import StrOutputParser
 from openai import OpenAI
 from langchain.load import dumps,loads
 import json
+from langchain_tavily import TavilySearch
 
+search_tool = TavilySearch(
+    max_results=5,
+    topic="general",
+    include_answer=True,
+    include_raw_content=False,
+    include_images=False,
+    search_depth="basic",
+    time_range="day"
+)
 
 client= OpenAI()
 
@@ -47,7 +57,7 @@ def get_config_for_user(email: str):
 
     return config
 
-web_search_tool = DuckDuckGoSearchRun()
+# web_search_tool = DuckDuckGoSearchRun()
 class QueryState(TypedDict):
     query: str
     context: str
@@ -64,7 +74,7 @@ class QueryState(TypedDict):
 
 
 def query_enhancer(state: QueryState) -> QueryState:
-    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>----ENHANCER")
+    # print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>----ENHANCER")
     prompt = PromptTemplate(
     input_variables=["query"],
     template="""You are an AI language model assistant. Your task is to generate five 
@@ -111,7 +121,7 @@ def multiquery_search_and_reranking(state: QueryState, llm=None) -> QueryState:
     vs = state["vectorstore"]
     all_queries = state["enhanced_query"]
     
-    print("started embeddings process------------------------------------------------------------------------------>")
+    # print("started embeddings process------------------------------------------------------------------------------>")
     resp = embeddings.client.create(
       model="text-embedding-ada-002",
       input=all_queries
@@ -157,9 +167,9 @@ def multiquery_search_and_reranking(state: QueryState, llm=None) -> QueryState:
 
 @observe(name="get_answer")
 def get_answer(state: QueryState, llm: Any = None) -> QueryState:
-    print(">>> ANSWER GENERATION")
+    # print(">>> ANSWER GENERATION")
     if state["try_count"] > 4:
-        print(">>> Aborting graph: No docs found and already tried once.")
+        # print(">>> Aborting jnjchbjhbrc.")
         return state
     
     state["try_count"] = state.get("try_count", 0) + 1
@@ -304,13 +314,19 @@ def evaluate_answer(state: QueryState) -> QueryState:
 @observe(name="webSearch")
 def query_upgradation_andSearch(state: QueryState, llm=None) -> QueryState:
     if not state.get("evaluation") or not isinstance(state["evaluation"], int):
-        print("type--------------------------------------------------------------->",type(state["evaluation"]))
+        # print("type--------------------------------------------------------------->",type(state["evaluation"]))
         state["query"] = "No evaluation available."
         return state
     time.sleep(3)
-    search=web_search_tool.run(state['query'])
-    print("Web Search Results:----------------------------------------------------------------------------------------->", search)
-    state["webSearch"] = search
+    # search=web_search_tool.run(state['query'])
+    try:
+       search = search_tool.invoke({"query": state['query']})
+       state["webSearch"] = search
+    # print("Web Search Results:----------------------------------------------------------------------------------------->", search)
+    except Exception as e:
+        print(f"Error during web search: {e}")
+        search = "No results found or an error occurred during the web search."
+    
     time.sleep(1)
     return state
 
@@ -322,7 +338,7 @@ def is_accuracy_good(state: QueryState) -> Literal["query_upgradation_andSearch"
     score = state.get("evaluation", 0)
     tc = state.get("try_count", 0)
 
-    print("try count---------------------------------------------------------------------------------------------------------------->", tc)
+    # print("try count---------------------------------------------------------------------------------------------------------------->", tc)
 
     if score > 5 or tc >= 3:
         return "other_part"
@@ -341,7 +357,6 @@ def build_langgraph() -> StateGraph:
     graph_builder.add_node("get_answer", get_answer)
     graph_builder.add_node("evaluate_answer", evaluate_answer)
     graph_builder.add_node("query_upgradation_andSearch", query_upgradation_andSearch)
-    # graph_builder.add_node("is_accuracy_good", is_accuracy_good)
     graph_builder.add_node("other_part", other_part)
 
     graph_builder.add_edge(START, "query_enhancer")

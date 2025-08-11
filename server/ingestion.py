@@ -116,12 +116,12 @@ def chunk_by_multilingual_sentences_with_timestamps(transcript_list, chunk_size=
             current_start = transcript_list[idx]["start"]
             i = idx
     
-            # Build chunk up to 1000 characters
+            
             while i < len(transcript_list) and len(current_chunk) + len(transcript_list[i]["text"]) + 1 <= 1000:
                 current_chunk += transcript_list[i]["text"].strip() + " "
                 i += 1
     
-            # Save the chunk
+            
             chunks.append(Document(
                 page_content=current_chunk.strip(),
                 metadata={"start": current_start}
