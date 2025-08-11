@@ -49,18 +49,18 @@ def clean_text(text):
     return text.replace("\n", " ").replace("[Music]", "").strip()
 
 def fetch_transcript(video_id, preferred_languages=["hi", "en"]):
-    # ytt_api = YouTubeTranscriptApi(
-    #     # proxy_config=WebshareProxyConfig(
-    #     #     proxy_username=os.getenv("PROXY_USERNAME"),
-    #     #     proxy_password=os.getenv("PROXY_PASSWORD"),
-    #     # )
-    # )
-    print("transcript is :iiiiiiiiiiiiiiiiii<", video_id, preferred_languages)
+    ytt_api = YouTubeTranscriptApi(
+        # proxy_config=WebshareProxyConfig(
+        #     proxy_username=os.getenv("PROXY_USERNAME"),
+        #     proxy_password=os.getenv("PROXY_PASSWORD"),
+        # )
+    )
+    # print("transcript is :iiiiiiiiiiiiiiiiii<", video_id, preferred_languages)
     try:
-        # fetched = ytt_api.fetch(video_id, languages=preferred_languages)
-        fetched=YouTubeTranscriptApi.get_transcript(video_id, preferred_languages)
-        # return fetched.to_raw_data()
-        return fetched
+        fetched = ytt_api.fetch(video_id, languages=preferred_languages)
+        # fetched=YouTubeTranscriptApi.get_transcript(video_id, preferred_languages)
+        return fetched.to_raw_data()
+        # return fetched
     except TranscriptsDisabled:
         print("No captions available for this video")
         return []
